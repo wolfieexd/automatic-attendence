@@ -1,6 +1,8 @@
 const { Student } = require('../models');
 const { Op } = require('sequelize');
 const cvEngineService = require('../services/cvEngineService');
+const AdmZip = require('adm-zip');
+const path = require('path');
 
 // Get all students
 exports.getAllStudents = async (req, res) => {
@@ -223,5 +225,85 @@ exports.verifyFace = async (req, res) => {
       success: false, 
       message: error.message 
     });
+  }
+};
+
+// Batch enroll students via ZIP file
+exports.batchEnrollStudents = async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'No ZIP file uploaded' });
+    }
+
+    const zip = new AdmZip(req.file.buffer);
+    const zipEntries = zip.getEntries();
+    
+    let successCount = 0;
+    let errors = [];
+
+    // Process each file in the ZIP sequentially
+    for (const entry of zipEntries) {
+      if (entry.isDirectory) continue;
+      
+      const filename = entry.entryName.split('/').pop();
+      if (!filename || filename.startsWith('.')) continue; // skip hidden files like .DS_Store
+
+      // Match format: 1001_JohnDoe.jpg or just 1001.jpg
+      const match = filename.match(/^([a-zA-Z0-9]+)(?:_([a-zA-Z0-9\s]+))?\.(jpg|jpeg|png)$/i);
+      
+      if (!match) {
+        errors.push(`Skipped ${filename}: Invalid format. Use StudentID_Name.jpg or StudentID.jpg`);
+        continue;
+      }
+
+      const studentId = match[1];
+      const name = match[2] ? match[2].replace(/_/g, ' ') : `Student ${studentId}`;
+      const ext = match[3];
+      
+      try {
+        // Create or find student
+        let [student] = await Student.findOrCreate({
+          where: { studentId },
+          defaults: {
+            name,
+            email: `${studentId}@college.edu`,
+            department: 'Default',
+            year: 1,
+            section: 'A'
+          }
+        });
+
+        // Prepare a mock multer file for cvEngineService
+        const fileBuffer = entry.getData();
+        const mockFile = {
+          buffer: fileBuffer,
+          originalname: filename,
+          mimetype: `image/${ext.toLowerCase() === 'jpg' ? 'jpeg' : ext.toLowerCase()}`
+        };
+
+        // Send to CV engine
+        const enrollmentResult = await cvEngineService.enrollStudent(mockFile, studentId);
+        
+        if (enrollmentResult.success) {
+          await student.update({ hasEnrolledFace: true });
+          successCount++;
+        } else {
+          errors.push(`Failed CV for ${studentId}: ${enrollmentResult.message}`);
+        }
+      } catch (err) {
+        errors.push(`Error processing ${studentId}: ${err.message}`);
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `Batch processing complete. Successfully enrolled ${successCount} students.`,
+      successCount,
+      errorCount: errors.length,
+      errors
+    });
+
+  } catch (error) {
+    res.status(500).json({ success: false, message: `Batch process error: ${error.message}` });
   }
 };

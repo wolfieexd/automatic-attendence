@@ -87,6 +87,21 @@ const ReportsPage = () => {
               <Download size={18} className="mr-2" />
               Export to Excel
             </Button>
+            <Button 
+              variant="secondary"
+              className="bg-red-50 text-red-600 border-red-200 hover:bg-red-100"
+              onClick={async () => {
+                try {
+                  const { attendanceAPI } = await import('../services/api');
+                  const res = await attendanceAPI.sendWarnings();
+                  alert(res.data.message);
+                } catch (err) {
+                  alert('Failed to send warnings');
+                }
+              }}
+            >
+              Send Warning Emails
+            </Button>
           </div>
         </div>
       </Card>

@@ -177,6 +177,41 @@ const StudentsPage = () => {
                 Export
               </Button>
             </motion.div>
+            
+            <input 
+              type="file" 
+              id="zipUpload" 
+              className="hidden" 
+              accept=".zip" 
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                
+                try {
+                  setLoading(true);
+                  const res = await studentsAPI.batchEnroll(file);
+                  alert(res.data.message);
+                  fetchStudents();
+                } catch (error) {
+                  alert(error.response?.data?.message || 'Error processing ZIP upload');
+                } finally {
+                  setLoading(false);
+                  e.target.value = null; // reset input
+                }
+              }}
+            />
+            
+            <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+              <Button
+                onClick={() => document.getElementById('zipUpload').click()}
+                variant="secondary"
+                className="flex items-center gap-2 bg-purple-50 text-purple-600 border-purple-200 hover:bg-purple-100"
+              >
+                <Users size={18} />
+                Batch Enroll (ZIP)
+              </Button>
+            </motion.div>
+            
             <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
               <Button
                 onClick={() => {

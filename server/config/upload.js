@@ -6,11 +6,16 @@ const storage = multer.memoryStorage(); // Store files in memory for direct uplo
 
 // Configure file filter
 const fileFilter = (req, file, cb) => {
-  // Allow only images
-  if (file.mimetype.startsWith('image/')) {
+  // Allow images and zip files
+  const isImage = file.mimetype.startsWith('image/');
+  const isZip = file.mimetype === 'application/zip' || 
+                file.mimetype === 'application/x-zip-compressed' || 
+                file.originalname.endsWith('.zip');
+                
+  if (isImage || isZip) {
     cb(null, true);
   } else {
-    cb(new Error('Only image files are allowed!'), false);
+    cb(new Error('Only image and ZIP files are allowed!'), false);
   }
 };
 
@@ -19,7 +24,7 @@ const upload = multer({
   storage: storage,
   fileFilter: fileFilter,
   limits: {
-    fileSize: 5 * 1024 * 1024 // 5MB limit
+    fileSize: 50 * 1024 * 1024 // 50MB limit for batch zip uploads
   }
 });
 

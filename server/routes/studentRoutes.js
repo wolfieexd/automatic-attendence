@@ -11,6 +11,7 @@ router.delete('/:id', studentController.deleteStudent);
 
 // Face recognition endpoints
 router.post('/enroll', upload.single('photo'), studentController.enrollStudent);
+router.post('/batch-enroll', upload.single('file'), studentController.batchEnrollStudents);
 router.put('/:id/photo', upload.single('photo'), studentController.updateStudentPhoto);
 router.post('/verify', upload.single('photo'), studentController.verifyFace);
 

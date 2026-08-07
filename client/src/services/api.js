@@ -38,6 +38,15 @@ export const studentsAPI = {
       },
     });
   },
+  batchEnroll: (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.post('/students/batch-enroll', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+  }
 };
 
 // Attendance API
@@ -48,6 +57,7 @@ export const attendanceAPI = {
   update: (id, status) => api.put(`/attendance/${id}`, { status }),
   delete: (id) => api.delete(`/attendance/${id}`),
   exportCSV: (courseId) => api.get(`/attendance/export/${courseId}`, { responseType: 'blob' }),
+  sendWarnings: () => api.post('/attendance/send-warnings'),
   getStats: () => api.get('/attendance/stats'),
   getLive: () => api.get('/attendance/live'),
   // Real-time attendance endpoints
