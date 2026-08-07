@@ -45,6 +45,9 @@ export const attendanceAPI = {
   mark: (data) => api.post('/attendance/mark', data),
   getByCourse: (courseId, params) => api.get(`/attendance/course/${courseId}`, { params }),
   getByStudent: (studentId, params) => api.get(`/attendance/student/${studentId}`, { params }),
+  update: (id, status) => api.put(`/attendance/${id}`, { status }),
+  delete: (id) => api.delete(`/attendance/${id}`),
+  exportCSV: (courseId) => api.get(`/attendance/export/${courseId}`, { responseType: 'blob' }),
   getStats: () => api.get('/attendance/stats'),
   getLive: () => api.get('/attendance/live'),
   // Real-time attendance endpoints

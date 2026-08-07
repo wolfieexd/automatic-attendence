@@ -245,6 +245,54 @@ exports.getLiveAttendance = async (req, res) => {
   }
 };
 
+// Export attendance to CSV
+exports.exportCSV = async (req, res) => {
+  try {
+    const { courseId } = req.params;
+    
+    // Fetch all attendance for this course
+    const attendanceRecords = await Attendance.findAll({
+      where: { CourseId: courseId },
+      include: [
+        { model: Student, attributes: ['studentId', 'name', 'department', 'year', 'section'] }
+      ],
+      order: [['date', 'DESC'], ['time', 'DESC']]
+    });
+    
+    if (!attendanceRecords || attendanceRecords.length === 0) {
+      return res.status(404).json({ success: false, message: 'No attendance records found for this course.' });
+    }
+
+    // Generate CSV Header
+    let csvContent = 'Date,Time,Student ID,Student Name,Department,Year,Section,Status,Method\n';
+
+    // Generate CSV Rows
+    attendanceRecords.forEach(record => {
+      const student = record.Student || {};
+      const date = new Date(record.date).toISOString().split('T')[0];
+      const time = record.time || '';
+      const status = record.status || 'unknown';
+      const method = record.method || 'face_recognition';
+      
+      // Escape commas in names if any
+      const name = student.name ? `"${student.name}"` : 'Unknown';
+      const studentId = student.studentId || 'Unknown';
+      const dept = student.department || '';
+      const year = student.year || '';
+      const section = student.section || '';
+
+      csvContent += `${date},${time},${studentId},${name},${dept},${year},${section},${status},${method}\n`;
+    });
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', `attachment; filename=attendance_course_${courseId}.csv`);
+    res.send(csvContent);
+  } catch (error) {
+    console.error('CSV Export error:', error);
+    res.status(500).json({ success: false, message: 'Failed to generate CSV' });
+  }
+};
+
 // Stream live attendance using Server-Sent Events
 exports.streamAttendance = async (req, res) => {
   const { courseId } = req.params;

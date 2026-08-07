@@ -9,6 +9,7 @@ router.get('/stats', attendanceController.getAttendanceStats);
 router.get('/live', attendanceController.getLiveAttendance);
 router.delete('/:id', attendanceController.deleteAttendance);
 router.put('/:id', attendanceController.updateAttendance);
+router.get('/export/:courseId', attendanceController.exportCSV);
 
 // Live attendance tracking routes
 router.get('/course/:courseId', attendanceController.getByCourse);
