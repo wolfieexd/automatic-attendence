@@ -1,16 +1,19 @@
-const Course = require('../models/Course');
+const { Course } = require('../models');
 
 // Get all courses
 exports.getAllCourses = async (req, res) => {
   try {
     const { department, year, section } = req.query;
-    let query = {};
+    let where = {};
 
-    if (department) query.department = department;
-    if (year) query.year = parseInt(year);
-    if (section) query.section = section;
+    if (department) where.department = department;
+    if (year) where.year = parseInt(year);
+    if (section) where.section = section;
 
-    const courses = await Course.find(query).sort({ createdAt: -1 });
+    const courses = await Course.findAll({
+      where,
+      order: [['createdAt', 'DESC']]
+    });
     res.json({ success: true, data: courses });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -20,7 +23,7 @@ exports.getAllCourses = async (req, res) => {
 // Get course by ID
 exports.getCourseById = async (req, res) => {
   try {
-    const course = await Course.findById(req.params.id);
+    const course = await Course.findByPk(req.params.id);
     if (!course) {
       return res.status(404).json({ success: false, message: 'Course not found' });
     }
@@ -33,11 +36,10 @@ exports.getCourseById = async (req, res) => {
 // Create new course
 exports.createCourse = async (req, res) => {
   try {
-    const course = new Course(req.body);
-    await course.save();
+    const course = await Course.create(req.body);
     res.status(201).json({ success: true, data: course });
   } catch (error) {
-    if (error.code === 11000) {
+    if (error.name === 'SequelizeUniqueConstraintError') {
       return res.status(400).json({ 
         success: false, 
         message: 'Course code already exists' 
@@ -50,14 +52,11 @@ exports.createCourse = async (req, res) => {
 // Update course
 exports.updateCourse = async (req, res) => {
   try {
-    const course = await Course.findByIdAndUpdate(
-      req.params.id,
-      req.body,
-      { new: true, runValidators: true }
-    );
+    const course = await Course.findByPk(req.params.id);
     if (!course) {
       return res.status(404).json({ success: false, message: 'Course not found' });
     }
+    await course.update(req.body);
     res.json({ success: true, data: course });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -67,10 +66,11 @@ exports.updateCourse = async (req, res) => {
 // Delete course
 exports.deleteCourse = async (req, res) => {
   try {
-    const course = await Course.findByIdAndDelete(req.params.id);
+    const course = await Course.findByPk(req.params.id);
     if (!course) {
       return res.status(404).json({ success: false, message: 'Course not found' });
     }
+    await course.destroy();
     res.json({ success: true, message: 'Course deleted successfully' });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });

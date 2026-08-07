@@ -1,24 +1,28 @@
-const Student = require('../models/Student');
+const { Student } = require('../models');
+const { Op } = require('sequelize');
 const cvEngineService = require('../services/cvEngineService');
 
 // Get all students
 exports.getAllStudents = async (req, res) => {
   try {
     const { department, year, section, search } = req.query;
-    let query = {};
+    let where = {};
 
-    if (department) query.department = department;
-    if (year) query.year = parseInt(year);
-    if (section) query.section = section;
+    if (department) where.department = department;
+    if (year) where.year = parseInt(year);
+    if (section) where.section = section;
     if (search) {
-      query.$or = [
-        { name: { $regex: search, $options: 'i' } },
-        { studentId: { $regex: search, $options: 'i' } },
-        { email: { $regex: search, $options: 'i' } }
+      where[Op.or] = [
+        { name: { [Op.like]: `%${search}%` } },
+        { studentId: { [Op.like]: `%${search}%` } },
+        { email: { [Op.like]: `%${search}%` } }
       ];
     }
 
-    const students = await Student.find(query).sort({ createdAt: -1 });
+    const students = await Student.findAll({
+      where,
+      order: [['createdAt', 'DESC']]
+    });
     res.json({ success: true, data: students });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -28,7 +32,7 @@ exports.getAllStudents = async (req, res) => {
 // Get student by ID
 exports.getStudentById = async (req, res) => {
   try {
-    const student = await Student.findOne({ studentId: req.params.id });
+    const student = await Student.findOne({ where: { studentId: req.params.id } });
     if (!student) {
       return res.status(404).json({ success: false, message: 'Student not found' });
     }
@@ -41,11 +45,10 @@ exports.getStudentById = async (req, res) => {
 // Create new student
 exports.createStudent = async (req, res) => {
   try {
-    const student = new Student(req.body);
-    await student.save();
+    const student = await Student.create(req.body);
     res.status(201).json({ success: true, data: student });
   } catch (error) {
-    if (error.code === 11000) {
+    if (error.name === 'SequelizeUniqueConstraintError') {
       return res.status(400).json({ 
         success: false, 
         message: 'Student ID or Email already exists' 
@@ -58,14 +61,12 @@ exports.createStudent = async (req, res) => {
 // Update student
 exports.updateStudent = async (req, res) => {
   try {
-    const student = await Student.findOneAndUpdate(
-      { studentId: req.params.id },
-      req.body,
-      { new: true, runValidators: true }
-    );
+    const student = await Student.findOne({ where: { studentId: req.params.id } });
     if (!student) {
       return res.status(404).json({ success: false, message: 'Student not found' });
     }
+    
+    await student.update(req.body);
     res.json({ success: true, data: student });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -75,10 +76,12 @@ exports.updateStudent = async (req, res) => {
 // Delete student
 exports.deleteStudent = async (req, res) => {
   try {
-    const student = await Student.findOneAndDelete({ studentId: req.params.id });
+    const student = await Student.findOne({ where: { studentId: req.params.id } });
     if (!student) {
       return res.status(404).json({ success: false, message: 'Student not found' });
     }
+
+    await student.destroy();
 
     // Delete student from CV engine (face recognition system)
     try {
@@ -86,8 +89,6 @@ exports.deleteStudent = async (req, res) => {
       console.log('CV Engine delete result:', cvDeleteResult);
     } catch (cvError) {
       console.error('Error deleting student from CV engine:', cvError.message);
-      // Don't fail the entire operation if CV engine deletion fails
-      // The student is already deleted from the database
     }
 
     res.json({ 
@@ -118,7 +119,7 @@ exports.enrollStudent = async (req, res) => {
     }
 
     // First check if student exists
-    const student = await Student.findOne({ studentId: req.body.studentId });
+    const student = await Student.findOne({ where: { studentId: req.body.studentId } });
     if (!student) {
       return res.status(404).json({
         success: false,
@@ -137,8 +138,7 @@ exports.enrollStudent = async (req, res) => {
     }
 
     // Update student record with photo status
-    student.hasEnrolledFace = true;
-    await student.save();
+    await student.update({ hasEnrolledFace: true });
 
     res.json({
       success: true,
@@ -167,7 +167,7 @@ exports.updateStudentPhoto = async (req, res) => {
       });
     }
 
-    const student = await Student.findOne({ studentId: req.params.id });
+    const student = await Student.findOne({ where: { studentId: req.params.id } });
     if (!student) {
       return res.status(404).json({
         success: false,
@@ -186,8 +186,7 @@ exports.updateStudentPhoto = async (req, res) => {
     }
 
     // Update student record
-    student.hasEnrolledFace = true;
-    await student.save();
+    await student.update({ hasEnrolledFace: true });
 
     res.json({
       success: true,

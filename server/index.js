@@ -3,7 +3,8 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const fileUpload = require('express-fileupload');
-const connectDB = require('./config/db');
+const { connectDB } = require('./config/db');
+const { sequelize } = require('./models');
 
 // Import routes
 const studentRoutes = require('./routes/studentRoutes');
@@ -13,16 +14,23 @@ const photos = require('./routes/photos');
 
 const app = express();
 
-// Connect to database
-connectDB();
+// Connect to database and sync models
+connectDB().then(() => {
+  sequelize.sync({ alter: true }).then(() => {
+    console.log('SQLite Models synced successfully.');
+  });
+});
 
 // Middleware
-app.use(cors());
+app.use(cors({ origin: 'http://localhost:5173' }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(fileUpload({
   limits: { fileSize: 5 * 1024 * 1024 }, // 5MB max file size
-  createParentPath: true
+  createParentPath: true,
+  abortOnLimit: true,
+  safeFileNames: true,
+  preserveExtension: true
 }));
 
 // Static file serving

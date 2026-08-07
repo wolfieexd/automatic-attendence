@@ -7,12 +7,15 @@ import io
 import pickle
 from datetime import datetime
 from flask_cors import CORS
-import face_recognition
+from deepface import DeepFace
+import threading
+
+data_lock = threading.Lock()
 
 app = Flask(__name__)
 CORS(app, resources={
     r"/*": {
-        "origins": "*",
+        "origins": "http://localhost:3070",
         "methods": ["GET", "POST", "OPTIONS"],
         "allow_headers": ["Content-Type", "Authorization"]
     }
@@ -26,110 +29,94 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(PROCESSED_FACES, exist_ok=True)
 
 def load_student_data():
-    if os.path.exists(EMBEDDINGS_FILE):
-        with open(EMBEDDINGS_FILE, 'rb') as f:
-            return pickle.load(f)
-    return {
-        'encodings': [],
-        'student_ids': []
-    }
+    with data_lock:
+        if os.path.exists(EMBEDDINGS_FILE):
+            with open(EMBEDDINGS_FILE, 'rb') as f:
+                return pickle.load(f)
+        return {
+            'encodings': [],
+            'student_ids': []
+        }
 
 def save_student_data(data):
-    with open(EMBEDDINGS_FILE, 'wb') as f:
-        pickle.dump(data, f)
+    with data_lock:
+        with open(EMBEDDINGS_FILE, 'wb') as f:
+            pickle.dump(data, f)
 
 # Load student data
 student_data = load_student_data()
 
-def get_face_encoding_proper(image):
-    """Get face encoding using face_recognition library - much more accurate"""
-    # Convert BGR to RGB (OpenCV uses BGR, face_recognition uses RGB)
-    rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    
-    # Find face locations
-    face_locations = face_recognition.face_locations(rgb_image, model='hog')
-    
-    if len(face_locations) == 0:
-        print(f"No faces detected in image of size: {image.shape}")
-        return None
-    
-    print(f"Detected {len(face_locations)} faces")
-    
-    # Get face encodings
-    face_encodings = face_recognition.face_encodings(rgb_image, face_locations)
-    
-    if len(face_encodings) == 0:
-        return None
-    
-    # Return the first face (or you could return the largest)
-    return face_encodings[0], face_locations[0]
-
-def get_all_face_encodings_proper(image):
-    """Get encodings for all faces using face_recognition library"""
-    # Convert BGR to RGB
-    rgb_image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    
-    # Find face locations
-    face_locations = face_recognition.face_locations(rgb_image, model='hog')
-    
-    if len(face_locations) == 0:
-        print(f"No faces detected in image of size: {image.shape}")
-        return []
-    
-    print(f"Detected {len(face_locations)} faces")
-    
-    # Get face encodings
-    face_encodings = face_recognition.face_encodings(rgb_image, face_locations)
-    
-    result = []
-    for encoding, location in zip(face_encodings, face_locations):
-        # face_recognition returns (top, right, bottom, left)
-        top, right, bottom, left = location
-        # Convert to (x, y, w, h) format for consistency
-        x, y, w, h = left, top, right - left, bottom - top
+def get_face_encoding_proper(image, check_multiple=False):
+    """Get face encoding using DeepFace library"""
+    try:
+        results = DeepFace.represent(image, model_name="Facenet", enforce_detection=True)
+        if not results:
+            return None
         
-        result.append({
-            'encoding': encoding,
-            'coordinates': (x, y, w, h)
-        })
-    
-    return result
+        if check_multiple and len(results) > 1:
+            raise ValueError(f"Multiple faces detected ({len(results)}). Please use a photo with exactly one face.")
+            
+        face = results[0]
+        area = face['facial_area']
+        x, y, w, h = area['x'], area['y'], area['w'], area['h']
+        face_location = (y, x+w, y+h, x)
+        return face['embedding'], face_location
+    except ValueError as ve:
+        raise ve
+    except Exception as e:
+        print(f"No faces detected or DeepFace error: {e}")
+        return None
 
-def compare_faces_proper(known_encoding, face_encoding, tolerance=0.6):
-    """Compare faces using face_recognition library
-    
-    Args:
-        known_encoding: Known face encoding (128-dim array)
-        face_encoding: Face encoding to compare (128-dim array)
-        tolerance: Distance threshold (default 0.6, lower = stricter)
-    
-    Returns:
-        bool: True if faces match
+def get_all_face_encodings_proper(image, anti_spoofing=False):
+    """Get encodings for all faces using DeepFace"""
+    try:
+        results = DeepFace.represent(image, model_name="Facenet", enforce_detection=True, anti_spoofing=anti_spoofing)
+        out = []
+        for face in results:
+            # Skip if spoofed (when anti_spoofing is checked and face is not real)
+            if anti_spoofing and not face.get('is_real', True):
+                continue
+                
+            area = face['facial_area']
+            x, y, w, h = area['x'], area['y'], area['w'], area['h']
+            out.append({
+                'encoding': face['embedding'],
+                'coordinates': (x, y, w, h)
+            })
+        return out
+    except Exception as e:
+        print(f"No faces detected or DeepFace error: {e}")
+        return []
+
+def get_face_distance(known_encoding, face_encoding):
+    """Calculate cosine distance between two embeddings"""
+    a = np.array(known_encoding)
+    b = np.array(face_encoding)
+    # Cosine distance: 1 - cosine similarity
+    cos_sim = np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
+    return 1.0 - cos_sim
+
+def compare_faces_proper(known_encoding, face_encoding, tolerance=0.40):
+    """Compare faces using DeepFace Cosine distance
+    For Facenet, 0.40 is the optimal cosine distance threshold.
     """
-    # Calculate face distance
-    distance = face_recognition.face_distance([known_encoding], face_encoding)[0]
+    distance = get_face_distance(known_encoding, face_encoding)
     print(f"Face distance: {distance:.4f}, tolerance: {tolerance}")
-    
     return distance <= tolerance
 
 def get_face_confidence_proper(known_encoding, face_encoding):
     """Calculate confidence score (0-1) based on face distance"""
-    # Calculate face distance
-    distance = face_recognition.face_distance([known_encoding], face_encoding)[0]
+    distance = get_face_distance(known_encoding, face_encoding)
     
-    # Convert distance to confidence
-    # Distance typically ranges from 0 (identical) to 1+ (very different)
-    # Good match: < 0.6
-    # Borderline: 0.6-0.8
-    # No match: > 0.8
-    
-    if distance > 1.0:
+    # Cosine distance ranges from 0 to 2
+    # Distance 0 = 100% confidence
+    # Distance > 0.8 = 0% confidence
+    if distance > 0.8:
         return 0.0
-    elif distance < 0.4:
+    elif distance < 0.1:
         return 1.0
     else:
-        # Linear mapping: 0.4 distance = 1.0 confidence, 1.0 distance = 0.0 confidence
-        confidence = 1.0 - ((distance - 0.4) / 0.6)
+        confidence = 1.0 - (distance / 0.8)
         return max(0.0, min(1.0, confidence))
 
 # Initialize systems
@@ -196,7 +183,15 @@ def enroll_student():
             }), 400
         
         # Get face encoding using improved face_recognition library
-        result = get_face_encoding_proper(img)
+        try:
+            result = get_face_encoding_proper(img, check_multiple=True)
+        except ValueError as e:
+            os.remove(photo_path)
+            return jsonify({
+                'success': False,
+                'message': str(e)
+            }), 400
+            
         if result is None:
             os.remove(photo_path)
             return jsonify({
@@ -279,17 +274,27 @@ def video_feed():
             return b''
         
         print("Camera opened successfully!")
+        
+        frame_skip = 5  # Process every 5th frame
+        frame_count = 0
+        cached_faces = []
+        
         while True:
             success, frame = camera.read()
             if not success:
                 print("Failed to read frame from camera")
                 break
+                
+            frame_count += 1
             
-            # Use the improved face detection for live video
-            face_encodings = get_all_face_encodings_proper(frame)
+            # Use frame skipping to keep FPS smooth, but render cached boxes every frame
+            if frame_count % frame_skip == 1:
+                # Get faces with anti_spoofing
+                face_encodings = get_all_face_encodings_proper(frame, anti_spoofing=True)
+                cached_faces = face_encodings
             
-            # Process each detected face
-            for face_data in face_encodings:
+            # Process cached faces
+            for face_data in cached_faces:
                 face_encoding = face_data['encoding']
                 coordinates = face_data['coordinates']
                 x, y, w, h = coordinates
@@ -300,11 +305,11 @@ def video_feed():
                 best_distance = float('inf')
                 
                 for i, encoding in enumerate(student_data['encodings']):
-                    distance = face_recognition.face_distance([encoding], face_encoding)[0]
+                    distance = get_face_distance(encoding, face_encoding)
                     confidence = get_face_confidence_proper(encoding, face_encoding)
                     
                     # Find the match with the smallest distance (best match)
-                    if distance < best_distance and distance < 0.6:  # Proper threshold
+                    if distance < best_distance and distance < 0.4:  # Proper threshold
                         best_distance = distance
                         best_confidence = confidence
                         best_match = {
@@ -519,13 +524,13 @@ def verify_face():
             best_distance = float('inf')
             
             for i, encoding in enumerate(student_data['encodings']):
-                distance = face_recognition.face_distance([encoding], face_encoding)[0]
+                distance = get_face_distance(encoding, face_encoding)
                 confidence = get_face_confidence_proper(encoding, face_encoding)
                 
                 print(f"  Student {student_data['student_ids'][i]}: distance={distance:.4f}, confidence={confidence:.3f}")
                 
                 # Find the match with the smallest distance (best match)
-                if distance < best_distance and distance < 0.6:  # Proper threshold
+                if distance < best_distance and distance < 0.4:  # Proper threshold
                     best_distance = distance
                     best_match = {
                         'student_id': student_data['student_ids'][i],

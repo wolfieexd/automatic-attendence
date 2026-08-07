@@ -1,42 +1,41 @@
-const mongoose = require('mongoose');
+const { DataTypes } = require('sequelize');
+const { sequelize } = require('../config/db');
 
-const attendanceSchema = new mongoose.Schema({
-  studentId: {
-    type: String,
-    required: true,
-    ref: 'Student'
-  },
-  courseId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Course',
-    required: true
+const Attendance = sequelize.define('Attendance', {
+  id: {
+    type: DataTypes.INTEGER,
+    primaryKey: true,
+    autoIncrement: true
   },
   date: {
-    type: Date,
-    required: true
+    type: DataTypes.DATE,
+    allowNull: false
   },
   status: {
-    type: String,
-    enum: ['present', 'absent', 'late'],
-    default: 'present'
+    type: DataTypes.ENUM('present', 'absent', 'late'),
+    defaultValue: 'present'
   },
   timeIn: {
-    type: Date,
-    default: Date.now
+    type: DataTypes.DATE,
+    defaultValue: DataTypes.NOW
   },
   method: {
-    type: String,
-    enum: ['face_recognition', 'manual'],
-    default: 'face_recognition'
+    type: DataTypes.ENUM('face_recognition', 'manual'),
+    defaultValue: 'face_recognition'
   },
   confidence: {
-    type: Number,
-    default: 0
+    type: DataTypes.FLOAT,
+    defaultValue: 0
   }
+  // Foreign keys StudentId and CourseId will be added automatically by associations
 }, {
-  timestamps: true
+  timestamps: true,
+  indexes: [
+    {
+      unique: true,
+      fields: ['StudentId', 'CourseId', 'date'] // Match Sequelize default foreign key casing
+    }
+  ]
 });
 
-attendanceSchema.index({ studentId: 1, courseId: 1, date: 1 }, { unique: true });
-
-module.exports = mongoose.model('Attendance', attendanceSchema);
+module.exports = Attendance;

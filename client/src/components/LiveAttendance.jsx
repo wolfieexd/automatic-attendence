@@ -12,10 +12,12 @@ import {
   Maximize2,
   FlipHorizontal,
   Zap,
-  TrendingUp
+  TrendingUp,
+  UserPlus
 } from 'lucide-react';
 import { attendanceAPI, studentsAPI } from '../services/api';
 import { registerStream, registerVideoElement, unregisterStream, unregisterVideoElement, forceCleanupAllCameraResources } from '../utils/cameraCleanup';
+import QuickRegisterModal from './QuickRegisterModal';
 
 const LiveAttendance = () => {
   const { courseId } = useParams();
@@ -27,6 +29,9 @@ const LiveAttendance = () => {
   const [lastMarkedStudent, setLastMarkedStudent] = useState(null);
   const [sessionTime, setSessionTime] = useState(0);
   const [isConnected, setIsConnected] = useState(false);
+  const [showQuickRegister, setShowQuickRegister] = useState(false);
+  const [capturedBlob, setCapturedBlob] = useState(null);
+  const [capturedUrl, setCapturedUrl] = useState('');
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const eventSourceRef = useRef(null);
@@ -146,6 +151,30 @@ const LiveAttendance = () => {
       eventSourceRef.current.close();
       setTimeout(initAttendanceStream, 5000);
     };
+  };
+
+  const handleQuickRegisterClick = () => {
+    if (!videoRef.current) return;
+    const canvas = document.createElement('canvas');
+    canvas.width = videoRef.current.videoWidth;
+    canvas.height = videoRef.current.videoHeight;
+    const ctx = canvas.getContext('2d');
+    
+    // Handle mirroring if active
+    if (isMirrored) {
+      ctx.translate(canvas.width, 0);
+      ctx.scale(-1, 1);
+    }
+    
+    ctx.drawImage(videoRef.current, 0, 0);
+    
+    canvas.toBlob((blob) => {
+      if (blob) {
+        setCapturedBlob(blob);
+        setCapturedUrl(URL.createObjectURL(blob));
+        setShowQuickRegister(true);
+      }
+    }, 'image/jpeg', 0.9);
   };
 
   const processFrame = async () => {
@@ -391,6 +420,16 @@ const LiveAttendance = () => {
                   </div>
                   <div className="flex items-center gap-2">
                     <motion.button
+                      className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors bg-purple-100 text-purple-700 hover:bg-purple-200"
+                      onClick={handleQuickRegisterClick}
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                    >
+                      <UserPlus size={16} />
+                      Quick Register
+                    </motion.button>
+                    
+                    <motion.button
                       className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
                       style={{
                         backgroundColor: isMirrored ? '#3B82F6' : '#E5E7EB',
@@ -607,6 +646,13 @@ const LiveAttendance = () => {
           background: #94a3b8;
         }
       `}</style>
+      
+      <QuickRegisterModal 
+        isOpen={showQuickRegister}
+        onClose={() => setShowQuickRegister(false)}
+        imageBlob={capturedBlob}
+        imageUrl={capturedUrl}
+      />
     </motion.div>
   );
 };
